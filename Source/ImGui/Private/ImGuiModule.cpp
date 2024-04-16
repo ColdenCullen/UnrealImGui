@@ -1,4 +1,4 @@
-﻿#include "ImGuiModule.h"
+#include "ImGuiModule.h"
 
 #include <Widgets/SWindow.h>
 
@@ -100,7 +100,14 @@ TSharedPtr<FImGuiContext> FImGuiModule::FindOrCreateSessionContext(const int32 P
 
 void FImGuiModule::OnEndPIE(bool bIsSimulating)
 {
-	SessionContexts.Reset();
+	for (auto It = SessionContexts.CreateIterator(); It; ++It)
+	{
+		// INDEX_NONE is the key used for the "not in PIE" context, which doesn't need to be removed
+		if (It->Key != INDEX_NONE)
+		{
+			It.RemoveCurrent();
+		}
+	}
 }
 
 TSharedPtr<FImGuiContext> FImGuiModule::CreateWindowContext(const TSharedRef<SWindow>& Window)
