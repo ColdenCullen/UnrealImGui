@@ -19,6 +19,242 @@ THIRD_PARTY_INCLUDES_END
 
 #include "SImGuiOverlay.h"
 
+
+class FImGuiInputProcessor : public IInputProcessor
+{
+public:
+	explicit FImGuiInputProcessor(TSharedPtr<FImGuiContext> InOwner)
+	{
+		Owner = InOwner;
+	}
+
+	virtual void Tick(const float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> SlateCursor) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		const bool bHasGamepad = (IO.BackendFlags & ImGuiBackendFlags_HasGamepad);
+		if (bHasGamepad != SlateApp.IsGamepadAttached())
+		{
+			IO.BackendFlags ^= ImGuiBackendFlags_HasGamepad;
+		}
+
+		if (IO.WantSetMousePos)
+		{
+			SlateApp.SetCursorPos(IO.MousePos);
+		}
+
+#if 0
+		// #TODO(Ves): Sometimes inconsistent, something else is changing the cursor later in the frame?
+		if (IO.WantCaptureMouse && !(IO.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange))
+		{
+			const ImGuiMouseCursor CursorType = ImGui::GetMouseCursor();
+
+			if (IO.MouseDrawCursor || CursorType == ImGuiMouseCursor_None)
+			{
+				SlateCursor->SetType(EMouseCursor::None);
+			}
+			else if (CursorType == ImGuiMouseCursor_Arrow)
+			{
+				SlateCursor->SetType(EMouseCursor::Default);
+			}
+			else if (CursorType == ImGuiMouseCursor_TextInput)
+			{
+				SlateCursor->SetType(EMouseCursor::TextEditBeam);
+			}
+			else if (CursorType == ImGuiMouseCursor_ResizeAll)
+			{
+				SlateCursor->SetType(EMouseCursor::CardinalCross);
+			}
+			else if (CursorType == ImGuiMouseCursor_ResizeNS)
+			{
+				SlateCursor->SetType(EMouseCursor::ResizeUpDown);
+			}
+			else if (CursorType == ImGuiMouseCursor_ResizeEW)
+			{
+				SlateCursor->SetType(EMouseCursor::ResizeLeftRight);
+			}
+			else if (CursorType == ImGuiMouseCursor_ResizeNESW)
+			{
+				SlateCursor->SetType(EMouseCursor::ResizeSouthWest);
+			}
+			else if (CursorType == ImGuiMouseCursor_ResizeNWSE)
+			{
+				SlateCursor->SetType(EMouseCursor::ResizeSouthEast);
+			}
+			else if (CursorType == ImGuiMouseCursor_Hand)
+			{
+				SlateCursor->SetType(EMouseCursor::Hand);
+			}
+			else if (CursorType == ImGuiMouseCursor_NotAllowed)
+			{
+				SlateCursor->SetType(EMouseCursor::SlashedCircle);
+			}
+		}
+#endif
+		
+		if (IO.WantCaptureKeyboard && static_cast<ImGuiContext*>(*Owner)->ActiveId != 0)
+		{
+			// Guaranteed to be non-null when ActiveId != 0
+			const ImGuiWindow* ActiveWindow = static_cast<ImGuiContext*>(*Owner)->ActiveIdWindow;
+			const ImGuiViewport* ActiveViewport = ActiveWindow->Viewport;
+			// If ActiveWindow->Viewport is null, we should try to find it other ways
+			if (ActiveViewport == nullptr)
+			{
+				// The window may be docked and we need to try to traverse up to the parent
+				if (ActiveWindow->DockIsActive)
+				{
+					ActiveViewport = ActiveWindow->DockNode->HostWindow->Viewport;
+				}
+			}
+
+			if (ensureMsgf(ActiveViewport, TEXT("Unable to find viewport for active ImGui window")))
+			{
+				// Get the Slate widget for the viewport
+				const FImGuiViewportData* Viewport = static_cast<FImGuiViewportData*>(ActiveViewport->PlatformUserData);
+				const TSharedPtr<SImGuiOverlay> Overlay = Viewport->Overlay.Pin();
+				if (ensureMsgf(Overlay.IsValid(), TEXT("Overlay widget has been cleaned up despite ImGui viewport continuing to exist")))
+				{
+					// No HandleKeyCharEvent so punt focus to the widget for it to receive OnKeyChar events
+					SlateApp.SetKeyboardFocus(Overlay);
+				}
+			}
+		}
+	}
+
+	virtual bool HandleKeyDownEvent(FSlateApplication& SlateApp, const FKeyEvent& Event) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		IO.AddKeyEvent(ImGui::ConvertKey(Event.GetKey()), true);
+
+		const FModifierKeysState& ModifierKeys = Event.GetModifierKeys();
+		IO.AddKeyEvent(ImGuiMod_Ctrl, ModifierKeys.IsControlDown());
+		IO.AddKeyEvent(ImGuiMod_Shift, ModifierKeys.IsShiftDown());
+		IO.AddKeyEvent(ImGuiMod_Alt, ModifierKeys.IsAltDown());
+		IO.AddKeyEvent(ImGuiMod_Super, ModifierKeys.IsCommandDown());
+
+		return IO.WantCaptureKeyboard;
+	}
+
+	virtual bool HandleKeyUpEvent(FSlateApplication& SlateApp, const FKeyEvent& Event) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		IO.AddKeyEvent(ImGui::ConvertKey(Event.GetKey()), false);
+
+		const FModifierKeysState& ModifierKeys = Event.GetModifierKeys();
+		IO.AddKeyEvent(ImGuiMod_Ctrl, ModifierKeys.IsControlDown());
+		IO.AddKeyEvent(ImGuiMod_Shift, ModifierKeys.IsShiftDown());
+		IO.AddKeyEvent(ImGuiMod_Alt, ModifierKeys.IsAltDown());
+		IO.AddKeyEvent(ImGuiMod_Super, ModifierKeys.IsCommandDown());
+
+		return IO.WantCaptureKeyboard;
+	}
+
+	virtual bool HandleAnalogInputEvent(FSlateApplication& SlateApp, const FAnalogInputEvent& Event) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		const float Value = Event.GetAnalogValue();
+		IO.AddKeyAnalogEvent(ImGui::ConvertKey(Event.GetKey()), FMath::Abs(Value) > 0.1f, Value);
+
+		return IO.WantCaptureKeyboard;
+	}
+
+	virtual bool HandleMouseMoveEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		if (SlateApp.HasAnyMouseCaptor())
+		{
+			IO.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+			return false;
+		}
+
+		const FVector2f Position = Event.GetScreenSpacePosition();
+		IO.AddMousePosEvent(Position.X, Position.Y);
+
+		return IO.WantCaptureMouse;
+	}
+
+	virtual bool HandleMouseButtonDownEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		const FKey Button = Event.GetEffectingButton();
+		if (Button == EKeys::LeftMouseButton)
+		{
+			IO.AddMouseButtonEvent(ImGuiMouseButton_Left, true);
+		}
+		else if (Button == EKeys::RightMouseButton)
+		{
+			IO.AddMouseButtonEvent(ImGuiMouseButton_Right, true);
+		}
+		else if (Button == EKeys::MiddleMouseButton)
+		{
+			IO.AddMouseButtonEvent(ImGuiMouseButton_Middle, true);
+		}
+
+		return IO.WantCaptureMouse;
+	}
+
+	virtual bool HandleMouseButtonUpEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		const FKey Button = Event.GetEffectingButton();
+		if (Button == EKeys::LeftMouseButton)
+		{
+			IO.AddMouseButtonEvent(ImGuiMouseButton_Left, false);
+		}
+		else if (Button == EKeys::RightMouseButton)
+		{
+			IO.AddMouseButtonEvent(ImGuiMouseButton_Right, false);
+		}
+		else if (Button == EKeys::MiddleMouseButton)
+		{
+			IO.AddMouseButtonEvent(ImGuiMouseButton_Middle, false);
+		}
+
+		return IO.WantCaptureMouse;
+	}
+
+	virtual bool HandleMouseButtonDoubleClickEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
+	{
+		// Treat as mouse down, ImGui handles double click internally
+		return HandleMouseButtonDownEvent(SlateApp, Event);
+	}
+
+	virtual bool HandleMouseWheelOrGestureEvent(FSlateApplication& SlateApp, const FPointerEvent& Event, const FPointerEvent* GestureEvent) override
+	{
+		ImGui::FScopedContext ScopedContext(Owner);
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		IO.AddMouseWheelEvent(0.0f, Event.GetWheelDelta());
+
+		return IO.WantCaptureMouse;
+	}
+
+private:
+	TSharedPtr<FImGuiContext> Owner = nullptr;
+};
+
+
 FImGuiViewportData* FImGuiViewportData::GetOrCreate(ImGuiViewport* Viewport)
 {
 	if (!Viewport)
@@ -355,6 +591,9 @@ void FImGuiContext::Initialize()
 			PlatformApplication->OnDisplayMetricsChanged().AddSP(this, &FImGuiContext::OnDisplayMetricsChanged);
 			OnDisplayMetricsChanged(DisplayMetrics);
 		}
+
+		InputProcessor = MakeShared<FImGuiInputProcessor>(this->AsShared());
+		FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor.ToSharedRef(), 0);
 	}
 
 	// Ensure main viewport data is created ahead of time
@@ -374,6 +613,11 @@ FImGuiContext::~FImGuiContext()
 		if (const TSharedPtr<GenericApplication> PlatformApplication = FSlateApplication::Get().GetPlatformApplication())
 		{
 			PlatformApplication->OnDisplayMetricsChanged().RemoveAll(this);
+		}
+
+		if (InputProcessor.IsValid())
+		{
+			FSlateApplication::Get().UnregisterInputPreProcessor(InputProcessor);
 		}
 	}
 

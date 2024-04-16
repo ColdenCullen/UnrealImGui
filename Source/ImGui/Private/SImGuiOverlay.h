@@ -1,6 +1,5 @@
-﻿#pragma once
+#pragma once
 
-#include <Framework/Application/IInputProcessor.h>
 #include <Widgets/SLeafWidget.h>
 
 #include <imgui.h>
@@ -56,6 +55,5 @@ public:
 
 private:
 	TSharedPtr<FImGuiContext> Context = nullptr;
-	TSharedPtr<IInputProcessor> InputProcessor = nullptr;
 	FImGuiDrawData DrawData;
 };

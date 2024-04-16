@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Templates/SharedPointer.h>
+#include <Framework/Application/IInputProcessor.h>
 
 #if WITH_ENGINE
 #include <Engine/Texture2D.h>
@@ -63,6 +64,7 @@ private:
 
 	ImGuiContext* Context = nullptr;
 	ImPlotContext* PlotContext = nullptr;
+	TSharedPtr<IInputProcessor> InputProcessor = nullptr;
 
 	char IniFilenameAnsi[1024] = {};
 	char LogFilenameAnsi[1024] = {};
