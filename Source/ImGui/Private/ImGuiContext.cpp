@@ -362,6 +362,9 @@ void FImGuiContext::Initialize()
 
 	FCoreDelegates::OnBeginFrame.AddSP(this, &FImGuiContext::BeginFrame);
 	FCoreDelegates::OnEndFrame.AddSP(this, &FImGuiContext::EndFrame);
+
+	// Begin a new frame now so the context can be used immediately (BeginFrame() is safe to call twice)
+	BeginFrame();
 }
 
 FImGuiContext::~FImGuiContext()
