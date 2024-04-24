@@ -83,7 +83,7 @@ TSharedPtr<FImGuiContext> FImGuiModule::FindOrCreateSessionContext(const int32 P
 
 		if (Context.IsValid())
 		{
-			if (bShouldConnect && !Context->Connect(Host, Port) || bShouldListen && !Context->Listen(Port))
+			if ((bShouldConnect && !Context->Connect(Host, Port)) || (bShouldListen && !Context->Listen(Port)))
 			{
 				Context.Reset();
 				Context = nullptr;
