@@ -10,7 +10,7 @@
 #include <Widgets/SWindow.h>
 
 #if WITH_ENGINE
-#include <TextureResource.h>
+#include <ImageUtils.h>
 #endif
 
 THIRD_PARTY_INCLUDES_START
@@ -558,22 +558,13 @@ void FImGuiContext::BeginFrame()
 
 	if (!IO.Fonts->IsBuilt() || !FontAtlasTexturePtr.IsValid())
 	{
-		uint8* TextureDataRaw;
+		uint8* TextureData;
 		int32 TextureWidth, TextureHeight, BytesPerPixel;
-		IO.Fonts->GetTexDataAsRGBA32(&TextureDataRaw, &TextureWidth, &TextureHeight, &BytesPerPixel);
+		IO.Fonts->GetTexDataAsRGBA32(&TextureData, &TextureWidth, &TextureHeight, &BytesPerPixel);
 
 #if WITH_ENGINE
-		UTexture2D* FontAtlasTexture = UTexture2D::CreateTransient(TextureWidth, TextureHeight, PF_R8G8B8A8, TEXT("ImGuiFontAtlas"));
-		FontAtlasTexture->Filter = TF_Bilinear;
-		FontAtlasTexture->AddressX = TA_Wrap;
-		FontAtlasTexture->AddressY = TA_Wrap;
-
-		uint8* FontAtlasTextureData = static_cast<uint8*>(FontAtlasTexture->GetPlatformData()->Mips[0].BulkData.Lock(LOCK_READ_WRITE));
-		FMemory::Memcpy(FontAtlasTextureData, TextureDataRaw, TextureWidth * TextureHeight * BytesPerPixel);
-		FontAtlasTexture->GetPlatformData()->Mips[0].BulkData.Unlock();
-		FontAtlasTexture->UpdateResource();
-
-		FontAtlasTexturePtr.Reset(FontAtlasTexture);
+		const FImageView TextureView(TextureData, TextureWidth, TextureHeight, ERawImageFormat::BGRA8);
+		FontAtlasTexturePtr.Reset(FImageUtils::CreateTexture2DFromImage(TextureView));
 #else
 		FontAtlasTexturePtr = FSlateDynamicImageBrush::CreateWithImageData(
 			TEXT("ImGuiFontAtlas"), FVector2D(TextureWidth, TextureHeight),
