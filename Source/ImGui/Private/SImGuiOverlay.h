@@ -41,6 +41,7 @@ public:
 		}
 
 		SLATE_ARGUMENT(TSharedPtr<FImGuiContext>, Context);
+		SLATE_ARGUMENT_DEFAULT(bool, HandleInput) = true;
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& Args);

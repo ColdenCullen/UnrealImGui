@@ -117,8 +117,8 @@ uint64 ImFileWrite(const void* Data, uint64 Size, uint64 Count, ImFileHandle Fil
 }
 #endif
 
-ImGui::FScopedContext::FScopedContext(const int32 PIEInstance)
-	: FScopedContext(FImGuiModule::Get().FindOrCreateSessionContext(PIEInstance))
+ImGui::FScopedContext::FScopedContext(const int32 PieSessionId)
+	: FScopedContext(FImGuiModule::Get().FindOrCreateSessionContext(PieSessionId))
 {
 }
 
@@ -164,7 +164,7 @@ FImGuiContext* ImGui::FScopedContext::operator->() const
 
 ImGuiKey ImGui::ConvertKey(const FKey& Key)
 {
-	static const TMap<FKey, ImGuiKey> LookupMap = {
+	static const TMap<FKey, ImGuiKey> KeyLookupMap = {
 		{ EKeys::Tab, ImGuiKey_Tab },
 
 		{ EKeys::Left, ImGuiKey_LeftArrow },
@@ -302,16 +302,5 @@ ImGuiKey ImGui::ConvertKey(const FKey& Key)
 		{ EKeys::Gamepad_RightStick_Down, ImGuiKey_GamepadRStickDown }
 	};
 
-	const ImGuiKey* Result = LookupMap.Find(Key);
-	return (Result != nullptr) ? *Result : ImGuiKey_None;
-}
-
-FColor ImGui::ConvertColor(const uint32 Color)
-{
-	return FColor(
-		(Color >> IM_COL32_R_SHIFT) & 0xFF,
-		(Color >> IM_COL32_G_SHIFT) & 0xFF,
-		(Color >> IM_COL32_B_SHIFT) & 0xFF,
-		(Color >> IM_COL32_A_SHIFT) & 0xFF
-	);
+	return KeyLookupMap.FindRef(Key, ImGuiKey_None);
 }

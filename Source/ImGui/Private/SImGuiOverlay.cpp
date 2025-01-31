@@ -19,8 +19,7 @@ FImGuiDrawData::FImGuiDrawData(const ImDrawData* Source)
 	TotalIdxCount = Source->TotalIdxCount;
 	TotalVtxCount = Source->TotalVtxCount;
 
-	DrawLists.SetNumUninitialized(Source->CmdListsCount);
-	ConstructItems<FImGuiDrawList>(DrawLists.GetData(), Source->CmdLists.Data, Source->CmdListsCount);
+	ImGui::CopyArray(Source->CmdLists, DrawLists);
 
 	DisplayPos = Source->DisplayPos;
 	DisplaySize = Source->DisplaySize;
@@ -33,6 +32,25 @@ public:
 	explicit FImGuiInputProcessor(SImGuiOverlay* InOwner)
 	{
 		Owner = InOwner;
+
+		FSlateApplication::Get().OnApplicationActivationStateChanged().AddRaw(this, &FImGuiInputProcessor::OnApplicationActivationChanged);
+	}
+
+	virtual ~FImGuiInputProcessor() override
+	{
+		if (FSlateApplication::IsInitialized())
+		{
+			FSlateApplication::Get().OnApplicationActivationStateChanged().RemoveAll(this);
+		}
+	}
+
+	void OnApplicationActivationChanged(bool bIsActive) const
+	{
+		ImGui::FScopedContext ScopedContext(Owner->GetContext());
+
+		ImGuiIO& IO = ImGui::GetIO();
+
+		IO.AddFocusEvent(bIsActive);
 	}
 
 	virtual void Tick(const float DeltaTime, FSlateApplication& SlateApp, TSharedRef<ICursor> SlateCursor) override
@@ -49,59 +67,17 @@ public:
 
 		if (IO.WantSetMousePos)
 		{
-			SlateApp.SetCursorPos(IO.MousePos);
+			FVector2f Position = IO.MousePos;
+			if (!(IO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable))
+			{
+				// Mouse position for single viewport mode is in client space
+				Position += Owner->GetTickSpaceGeometry().AbsolutePosition;
+			}
+
+			SlateCursor->SetPosition(Position.X, Position.Y);
 		}
 
-#if 0
-		// #TODO(Ves): Sometimes inconsistent, something else is changing the cursor later in the frame?
-		if (IO.WantCaptureMouse && !(IO.ConfigFlags & ImGuiConfigFlags_NoMouseCursorChange))
-		{
-			const ImGuiMouseCursor CursorType = ImGui::GetMouseCursor();
-
-			if (IO.MouseDrawCursor || CursorType == ImGuiMouseCursor_None)
-			{
-				SlateCursor->SetType(EMouseCursor::None);
-			}
-			else if (CursorType == ImGuiMouseCursor_Arrow)
-			{
-				SlateCursor->SetType(EMouseCursor::Default);
-			}
-			else if (CursorType == ImGuiMouseCursor_TextInput)
-			{
-				SlateCursor->SetType(EMouseCursor::TextEditBeam);
-			}
-			else if (CursorType == ImGuiMouseCursor_ResizeAll)
-			{
-				SlateCursor->SetType(EMouseCursor::CardinalCross);
-			}
-			else if (CursorType == ImGuiMouseCursor_ResizeNS)
-			{
-				SlateCursor->SetType(EMouseCursor::ResizeUpDown);
-			}
-			else if (CursorType == ImGuiMouseCursor_ResizeEW)
-			{
-				SlateCursor->SetType(EMouseCursor::ResizeLeftRight);
-			}
-			else if (CursorType == ImGuiMouseCursor_ResizeNESW)
-			{
-				SlateCursor->SetType(EMouseCursor::ResizeSouthWest);
-			}
-			else if (CursorType == ImGuiMouseCursor_ResizeNWSE)
-			{
-				SlateCursor->SetType(EMouseCursor::ResizeSouthEast);
-			}
-			else if (CursorType == ImGuiMouseCursor_Hand)
-			{
-				SlateCursor->SetType(EMouseCursor::Hand);
-			}
-			else if (CursorType == ImGuiMouseCursor_NotAllowed)
-			{
-				SlateCursor->SetType(EMouseCursor::SlashedCircle);
-			}
-		}
-#endif
-
-		if (IO.WantCaptureKeyboard && !Owner->HasKeyboardFocus())
+		if (IO.WantTextInput && !Owner->HasKeyboardFocus())
 		{
 			// No HandleKeyCharEvent so punt focus to the widget for it to receive OnKeyChar events
 			SlateApp.SetKeyboardFocus(Owner->AsShared());
@@ -110,6 +86,11 @@ public:
 
 	virtual bool HandleKeyDownEvent(FSlateApplication& SlateApp, const FKeyEvent& Event) override
 	{
+		if (!ShouldHandleEvent(SlateApp, Event))
+		{
+			return false;
+		}
+
 		ImGui::FScopedContext ScopedContext(Owner->GetContext());
 
 		ImGuiIO& IO = ImGui::GetIO();
@@ -127,6 +108,11 @@ public:
 
 	virtual bool HandleKeyUpEvent(FSlateApplication& SlateApp, const FKeyEvent& Event) override
 	{
+		if (!ShouldHandleEvent(SlateApp, Event))
+		{
+			return false;
+		}
+
 		ImGui::FScopedContext ScopedContext(Owner->GetContext());
 
 		ImGuiIO& IO = ImGui::GetIO();
@@ -144,6 +130,11 @@ public:
 
 	virtual bool HandleAnalogInputEvent(FSlateApplication& SlateApp, const FAnalogInputEvent& Event) override
 	{
+		if (!ShouldHandleEvent(SlateApp, Event))
+		{
+			return false;
+		}
+
 		ImGui::FScopedContext ScopedContext(Owner->GetContext());
 
 		ImGuiIO& IO = ImGui::GetIO();
@@ -156,6 +147,11 @@ public:
 
 	virtual bool HandleMouseMoveEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
 	{
+		if (!ShouldHandleEvent(SlateApp, Event))
+		{
+			return false;
+		}
+
 		ImGui::FScopedContext ScopedContext(Owner->GetContext());
 
 		ImGuiIO& IO = ImGui::GetIO();
@@ -166,7 +162,13 @@ public:
 			return false;
 		}
 
-		const FVector2f Position = Event.GetScreenSpacePosition();
+		FVector2f Position = Event.GetScreenSpacePosition();
+		if (!(IO.ConfigFlags & ImGuiConfigFlags_ViewportsEnable))
+		{
+			// Mouse position for single viewport mode is in client space
+			Position -= Owner->GetTickSpaceGeometry().AbsolutePosition;
+		}
+
 		IO.AddMousePosEvent(Position.X, Position.Y);
 
 		return IO.WantCaptureMouse;
@@ -174,6 +176,11 @@ public:
 
 	virtual bool HandleMouseButtonDownEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
 	{
+		if (!ShouldHandleEvent(SlateApp, Event))
+		{
+			return false;
+		}
+
 		ImGui::FScopedContext ScopedContext(Owner->GetContext());
 
 		ImGuiIO& IO = ImGui::GetIO();
@@ -197,6 +204,11 @@ public:
 
 	virtual bool HandleMouseButtonUpEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
 	{
+		if (!ShouldHandleEvent(SlateApp, Event))
+		{
+			return false;
+		}
+
 		ImGui::FScopedContext ScopedContext(Owner->GetContext());
 
 		ImGuiIO& IO = ImGui::GetIO();
@@ -215,7 +227,7 @@ public:
 			IO.AddMouseButtonEvent(ImGuiMouseButton_Middle, false);
 		}
 
-		return IO.WantCaptureMouse;
+		return false;
 	}
 
 	virtual bool HandleMouseButtonDoubleClickEvent(FSlateApplication& SlateApp, const FPointerEvent& Event) override
@@ -226,6 +238,11 @@ public:
 
 	virtual bool HandleMouseWheelOrGestureEvent(FSlateApplication& SlateApp, const FPointerEvent& Event, const FPointerEvent* GestureEvent) override
 	{
+		if (!ShouldHandleEvent(SlateApp, Event))
+		{
+			return false;
+		}
+
 		ImGui::FScopedContext ScopedContext(Owner->GetContext());
 
 		ImGuiIO& IO = ImGui::GetIO();
@@ -235,6 +252,19 @@ public:
 		return IO.WantCaptureMouse;
 	}
 
+	bool ShouldHandleEvent(FSlateApplication& SlateApp, const FInputEvent& Event) const
+	{
+#if WITH_EDITORONLY_DATA
+		if (GIntraFrameDebuggingGameThread)
+		{
+			// Discard input events when the game thread is paused for debugging
+			return false;
+		}
+#endif
+
+		return true;
+	}
+
 private:
 	SImGuiOverlay* Owner = nullptr;
 };
@@ -242,12 +272,11 @@ private:
 void SImGuiOverlay::Construct(const FArguments& Args)
 {
 	SetVisibility(EVisibility::HitTestInvisible);
+	ForceVolatile(true);
 
-	Context = Args._Context;
-	if (!Context.IsValid())
+	Context = Args._Context.IsValid() ? Args._Context : FImGuiContext::Create();
+	if (Args._HandleInput)
 	{
-		Context = FImGuiContext::Create();
-
 		InputProcessor = MakeShared<FImGuiInputProcessor>(this);
 		FSlateApplication::Get().RegisterInputPreProcessor(InputProcessor.ToSharedRef(), 0);
 	}
@@ -270,38 +299,40 @@ int32 SImGuiOverlay::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGe
 
 	const FSlateRenderTransform Transform(AllottedGeometry.GetAccumulatedRenderTransform().GetTranslation() - FVector2d(DrawData.DisplayPos));
 
+	TArray<FSlateVertex> Vertices;
+	TArray<SlateIndex> Indices;
 	FSlateBrush TextureBrush;
+
 	for (const FImGuiDrawList& DrawList : DrawData.DrawLists)
 	{
-		TArray<FSlateVertex> Vertices;
 		Vertices.SetNumUninitialized(DrawList.VtxBuffer.Size);
-		for (int32 BufferIdx = 0; BufferIdx < Vertices.Num(); ++BufferIdx)
+
+		ImDrawVert* SrcVertex = DrawList.VtxBuffer.Data;
+		FSlateVertex* DstVertex = Vertices.GetData();
+
+		for (int32 BufferIdx = 0; BufferIdx < Vertices.Num(); ++BufferIdx, ++SrcVertex, ++DstVertex)
 		{
-			const ImDrawVert& Vtx = DrawList.VtxBuffer.Data[BufferIdx];
-			Vertices[BufferIdx] = FSlateVertex::Make<ESlateVertexRounding::Disabled>(Transform, Vtx.pos, Vtx.uv, FVector2f::UnitVector, ImGui::ConvertColor(Vtx.col));
+			DstVertex->TexCoords[0] = SrcVertex->uv.x;
+			DstVertex->TexCoords[1] = SrcVertex->uv.y;
+			DstVertex->TexCoords[2] = 1;
+			DstVertex->TexCoords[3] = 1;
+			DstVertex->Position = TransformPoint(Transform, FVector2f(SrcVertex->pos));
+			DstVertex->Color.Bits = SrcVertex->col;
 		}
 
-		TArray<SlateIndex> Indices;
-		Indices.SetNumUninitialized(DrawList.IdxBuffer.Size);
-		for (int32 BufferIdx = 0; BufferIdx < Indices.Num(); ++BufferIdx)
-		{
-			Indices[BufferIdx] = DrawList.IdxBuffer.Data[BufferIdx];
-		}
+		ImGui::CopyArray(DrawList.IdxBuffer, Indices);
 
 		for (const ImDrawCmd& DrawCmd : DrawList.CmdBuffer)
 		{
-			TArray VerticesSlice(Vertices.GetData() + DrawCmd.VtxOffset, Vertices.Num() - DrawCmd.VtxOffset);
-			TArray IndicesSlice(Indices.GetData() + DrawCmd.IdxOffset, DrawCmd.ElemCount);
-
 #if WITH_ENGINE
-			UTexture2D* Texture = DrawCmd.GetTexID();
+			UTexture* Texture = DrawCmd.GetTexID();
 			if (TextureBrush.GetResourceObject() != Texture)
 			{
 				TextureBrush.SetResourceObject(Texture);
 				if (IsValid(Texture))
 				{
-					TextureBrush.ImageSize.X = Texture->GetSizeX();
-					TextureBrush.ImageSize.Y = Texture->GetSizeY();
+					TextureBrush.ImageSize.X = Texture->GetSurfaceWidth();
+					TextureBrush.ImageSize.Y = Texture->GetSurfaceHeight();
 					TextureBrush.ImageType = ESlateBrushImageType::FullColor;
 					TextureBrush.DrawAs = ESlateBrushDrawType::Image;
 				}
@@ -332,7 +363,14 @@ int32 SImGuiOverlay::OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGe
 			ClipRect = TransformRect(Transform, ClipRect);
 
 			OutDrawElements.PushClip(FSlateClippingZone(ClipRect));
-			FSlateDrawElement::MakeCustomVerts(OutDrawElements, LayerId, TextureBrush.GetRenderingResource(), VerticesSlice, IndicesSlice, nullptr, 0, 0);
+
+			FSlateDrawElement::MakeCustomVerts(
+				OutDrawElements, LayerId, TextureBrush.GetRenderingResource(),
+				TArray(Vertices.GetData() + DrawCmd.VtxOffset, Vertices.Num() - DrawCmd.VtxOffset),
+				TArray(Indices.GetData() + DrawCmd.IdxOffset, DrawCmd.ElemCount),
+				nullptr, 0, 0
+			);
+
 			OutDrawElements.PopClip();
 		}
 	}
@@ -358,7 +396,7 @@ FReply SImGuiOverlay::OnKeyChar(const FGeometry& MyGeometry, const FCharacterEve
 
 	IO.AddInputCharacter(CharCast<ANSICHAR>(Event.GetCharacter()));
 
-	return IO.WantCaptureKeyboard ? FReply::Handled() : FReply::Unhandled();
+	return IO.WantTextInput ? FReply::Handled() : FReply::Unhandled();
 }
 
 TSharedPtr<FImGuiContext> SImGuiOverlay::GetContext() const

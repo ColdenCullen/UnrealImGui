@@ -32,8 +32,13 @@ struct SavedImguiContext
 	void					Restore(ImGuiContext* copyTo);	
 	const char*				mBackendPlatformName						= nullptr;
 	const char*				mBackendRendererName						= nullptr;
+#if IMGUI_VERSION_NUM >= 19110
+	const char*				(*mGetClipboardTextFn)(ImGuiContext*)				= nullptr;
+    void					(*mSetClipboardTextFn)(ImGuiContext*, const char*)	= nullptr;
+#else
 	const char*				(*mGetClipboardTextFn)(void*)				= nullptr;
     void					(*mSetClipboardTextFn)(void*, const char*)	= nullptr;
+#endif
 	void*					mClipboardUserData							= nullptr;
     void*					mImeWindowHandle							= nullptr;
 	float					mFontGlobalScale							= 1.f;
@@ -43,8 +48,10 @@ struct SavedImguiContext
 	bool					mDrawMouse									= false;
 	bool					mSavedContext								= false;
 	char					mPadding1[2]								= {};
+#if IMGUI_VERSION_NUM < 18700
 	int						mKeyMap[ImGuiKey_COUNT]						= {};
 	char					mPadding2[8 - (sizeof(mKeyMap) % 8)]		={};	
+#endif
 };
 
 //=============================================================================

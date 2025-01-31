@@ -6,6 +6,15 @@
 #include <Math/Vector2D.h>
 #include <Math/Vector4.h>
 #include <Misc/AssertionMacros.h>
+#include <Misc/EngineVersionComparison.h>
+
+class FImGuiContext;
+class UTexture;
+struct FKey;
+struct FSlateBrush;
+enum ImGuiKey : int;
+struct ImGuiContext;
+struct ImPlotContext;
 
 #define IM_ASSERT(Expr) ensure(Expr)
 
@@ -13,6 +22,7 @@
 #define IMGUI_DISABLE_WIN32_FUNCTIONS
 #define IMGUI_DISABLE_DEFAULT_ALLOCATORS
 #define IMGUI_DISABLE_DEFAULT_FILE_FUNCTIONS
+#define IMGUI_DISABLE_DEFAULT_SHELL_FUNCTIONS
 
 #ifdef IMGUI_DISABLE_DEFAULT_FILE_FUNCTIONS
 typedef IFileHandle* ImFileHandle;
@@ -29,7 +39,9 @@ uint64 ImFileWrite(const void* Data, uint64 Size, uint64 Count, ImFileHandle Fil
 	operator FVector2d() const { return FVector2d(x, y); } \
 	constexpr ImVec2(const FVector2d& V) : x(V.X), y(V.Y) {} \
 	operator FIntPoint() const { return FIntPoint(x, y); } \
-	constexpr ImVec2(const FIntPoint& V) : x(V.X), y(V.Y) {}
+	constexpr ImVec2(const FIntPoint& V) : x(V.X), y(V.Y) {} \
+	operator FIntVector2() const { return FIntVector2(x, y); } \
+	constexpr ImVec2(const FIntVector2& V) : x(V.X), y(V.Y) {}
 
 #define IM_VEC4_CLASS_EXTRA \
 	operator FVector4() const { return FVector4(x, y, z, w); } \
@@ -39,20 +51,27 @@ uint64 ImFileWrite(const void* Data, uint64 Size, uint64 Count, ImFileHandle Fil
 	operator FLinearColor() const { return FLinearColor(x, y, z, w); } \
 	constexpr ImVec4(const FLinearColor& C) : x(C.R), y(C.G), z(C.B), w(C.A) {}
 
-#if WITH_ENGINE
-#define ImTextureID class UTexture2D*
-#else
-#define ImTextureID struct FSlateBrush*
-#endif
+#define IM_COL32_R_SHIFT ImGui::ImCol32RShift
+#define IM_COL32_G_SHIFT ImGui::ImCol32GShift
+#define IM_COL32_B_SHIFT ImGui::ImCol32BShift
+#define IM_COL32_A_SHIFT ImGui::ImCol32AShift
+#define IM_COL32_A_MASK ImGui::ImCol32AMask
 
-class FImGuiContext;
-struct ImGuiContext;
-struct ImPlotContext;
-enum ImGuiKey : int;
-struct FKey;
+#if WITH_ENGINE
+#define ImTextureID UTexture*
+#else
+#define ImTextureID FSlateBrush*
+#endif
 
 namespace ImGui
 {
+	// Pack ImGui 32-bit colors so they're bit compatible with FColor
+	inline constexpr uint32 ImCol32RShift = offsetof(FColor, R) * 8;
+	inline constexpr uint32 ImCol32GShift = offsetof(FColor, G) * 8;
+	inline constexpr uint32 ImCol32BShift = offsetof(FColor, B) * 8;
+	inline constexpr uint32 ImCol32AShift = offsetof(FColor, A) * 8;
+	inline constexpr uint32 ImCol32AMask = (0xFF << ImCol32AShift);
+
 	/// Helper to safely scope ImGui drawing to a specific context; in most cases you should
 	/// use the default constructor to switch to the current game, editor, or PIE context:
 	/// @code
@@ -64,7 +83,11 @@ namespace ImGui
 	/// @endcode
 	struct IMGUI_API FScopedContext
 	{
-		UE_NODISCARD_CTOR explicit FScopedContext(const int32 PIEInstance = GPlayInEditorID);
+#if UE_VERSION_OLDER_THAN(5, 5, 0)
+		UE_NODISCARD_CTOR explicit FScopedContext(const int32 PieSessionId = GPlayInEditorID);
+#else
+		UE_NODISCARD_CTOR explicit FScopedContext(const int32 PieSessionId = UE::GetPlayInEditorID());
+#endif
 		UE_NODISCARD_CTOR explicit FScopedContext(const TSharedPtr<FImGuiContext>& InContext);
 		~FScopedContext();
 
@@ -83,9 +106,9 @@ namespace ImGui
 		ImPlotContext* PrevPlotContext = nullptr;
 	};
 
-	/// Converts between Unreal and ImGui key types
+	/// Converts ImGui key to UE key
 	IMGUI_API ImGuiKey ConvertKey(const FKey& Key);
-
-	/// Converts between Unreal and ImGui 32-bit color types
-	IMGUI_API FColor ConvertColor(uint32 Color);
 }
+
+#define IMGUI_INCLUDE_IMGUI_USER_H
+#define IMGUI_USER_H_FILENAME "ImGuiConfig.inl"

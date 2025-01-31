@@ -1,5 +1,6 @@
 ﻿#pragma once
 
+#include <Misc/EngineVersionComparison.h>
 #include <Modules/ModuleManager.h>
 
 class FImGuiContext;
@@ -17,8 +18,12 @@ public:
 	static FImGuiModule& Get();
 
 	/// Finds or creates an ImGui context for an editor or game session
-	/// @param PIEInstance Optional target Play-in-Editor instance, defaults to the current instance
-	TSharedPtr<FImGuiContext> FindOrCreateSessionContext(const int32 PIEInstance = GPlayInEditorID);
+	/// @param PieSessionId Optional target Play-in-Editor instance, defaults to the current instance
+#if UE_VERSION_OLDER_THAN(5, 5, 0)
+	TSharedPtr<FImGuiContext> FindOrCreateSessionContext(const int32 PieSessionId = GPlayInEditorID);
+#else
+	TSharedPtr<FImGuiContext> FindOrCreateSessionContext(const int32 PieSessionId = UE::GetPlayInEditorID());
+#endif
 
 	/// Creates an ImGui context for a Slate window
 	static TSharedPtr<FImGuiContext> CreateWindowContext(const TSharedRef<SWindow>& Window);
@@ -28,6 +33,7 @@ public:
 
 private:
 	void OnEndPIE(bool bIsSimulating);
+	void OnViewportCreated() const;
 
 	TMap<int32, TSharedPtr<FImGuiContext>> SessionContexts;
 };

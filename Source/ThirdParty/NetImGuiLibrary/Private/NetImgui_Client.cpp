@@ -24,9 +24,15 @@ void SavedImguiContext::Save(ImGuiContext* copyFrom)
 	mBackendPlatformName	= sourceIO.BackendPlatformName;
 	mBackendRendererName	= sourceIO.BackendRendererName;
 	mDrawMouse				= sourceIO.MouseDrawCursor;
+#if IMGUI_VERSION_NUM >= 19110
+	mGetClipboardTextFn		= ImGui::GetPlatformIO().Platform_GetClipboardTextFn;
+    mSetClipboardTextFn		= ImGui::GetPlatformIO().Platform_SetClipboardTextFn;
+    mClipboardUserData		= ImGui::GetPlatformIO().Platform_ClipboardUserData;
+#else
 	mGetClipboardTextFn		= sourceIO.GetClipboardTextFn;
     mSetClipboardTextFn		= sourceIO.SetClipboardTextFn;
     mClipboardUserData		= sourceIO.ClipboardUserData;
+#endif
 	mFontGlobalScale		= sourceIO.FontGlobalScale;
 	mFontGeneratedSize		= sourceIO.Fonts->Fonts.Size > 0 ? sourceIO.Fonts->Fonts[0]->FontSize : 13.f; // Save size to restore the font to original size
 #if IMGUI_VERSION_NUM < 18700
@@ -44,9 +50,15 @@ void SavedImguiContext::Restore(ImGuiContext* copyTo)
 	destIO.BackendPlatformName	= mBackendPlatformName;
 	destIO.BackendRendererName	= mBackendRendererName;
 	destIO.MouseDrawCursor		= mDrawMouse;
+#if IMGUI_VERSION_NUM >= 19110
+	ImGui::GetPlatformIO().Platform_GetClipboardTextFn	= mGetClipboardTextFn;
+    ImGui::GetPlatformIO().Platform_SetClipboardTextFn	= mSetClipboardTextFn;
+	ImGui::GetPlatformIO().Platform_ClipboardUserData	= mClipboardUserData;
+#else
 	destIO.GetClipboardTextFn	= mGetClipboardTextFn;
     destIO.SetClipboardTextFn	= mSetClipboardTextFn;
 	destIO.ClipboardUserData	= mClipboardUserData;
+#endif
 	destIO.FontGlobalScale		= mFontGlobalScale;
 #if IMGUI_VERSION_NUM < 18700
 	memcpy(destIO.KeyMap, mKeyMap, sizeof(destIO.KeyMap));
@@ -57,8 +69,14 @@ void SavedImguiContext::Restore(ImGuiContext* copyTo)
 // GET CLIPBOARD
 // Content received from the Server
 //=================================================================================================
+#if IMGUI_VERSION_NUM >= 19110
+static const char* GetClipboardTextFn_NetImguiImpl(ImGuiContext* context)
+{
+	void* user_data_ctx = context->PlatformIO.Platform_ClipboardUserData;
+#else
 static const char* GetClipboardTextFn_NetImguiImpl(void* user_data_ctx)
 {
+#endif
 	const ClientInfo* pClient = reinterpret_cast<const ClientInfo*>(user_data_ctx);
 	return pClient && pClient->mpCmdClipboard ? pClient->mpCmdClipboard->mContentUTF8.Get() : nullptr;
 }
@@ -66,8 +84,14 @@ static const char* GetClipboardTextFn_NetImguiImpl(void* user_data_ctx)
 //=================================================================================================
 // SET CLIPBOARD
 //=================================================================================================
+#if IMGUI_VERSION_NUM >= 19110
+static void SetClipboardTextFn_NetImguiImpl(ImGuiContext* context, const char* text)
+{
+	void* user_data_ctx = context->PlatformIO.Platform_ClipboardUserData;
+#else
 static void SetClipboardTextFn_NetImguiImpl(void* user_data_ctx, const char* text)
 {
+#endif
 	if(user_data_ctx){
 		ClientInfo* pClient				= reinterpret_cast<ClientInfo*>(user_data_ctx);
 		CmdClipboard* pClipboardOut		= CmdClipboard::Create(text);
@@ -483,9 +507,15 @@ void ClientInfo::ContextOverride()
 	{
 		ImGuiIO& newIO						= ImGui::GetIO();
 		newIO.MouseDrawCursor				= false;
+#if IMGUI_VERSION_NUM >= 19110
+		ImGui::GetPlatformIO().Platform_GetClipboardTextFn	= GetClipboardTextFn_NetImguiImpl;
+		ImGui::GetPlatformIO().Platform_SetClipboardTextFn	= SetClipboardTextFn_NetImguiImpl;
+		ImGui::GetPlatformIO().Platform_ClipboardUserData	= this;
+#else
 		newIO.GetClipboardTextFn			= GetClipboardTextFn_NetImguiImpl;
 		newIO.SetClipboardTextFn			= SetClipboardTextFn_NetImguiImpl;
 		newIO.ClipboardUserData				= this;
+#endif
 		newIO.BackendPlatformName			= "NetImgui";
 		newIO.BackendRendererName			= "DirectX11";
 		if( mFontCreationFunction != nullptr )

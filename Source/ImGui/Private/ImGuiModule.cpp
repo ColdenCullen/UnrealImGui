@@ -20,12 +20,20 @@ void FImGuiModule::StartupModule()
 #if WITH_EDITOR
 	FEditorDelegates::EndPIE.AddRaw(this, &FImGuiModule::OnEndPIE);
 #endif
+
+#if WITH_ENGINE
+	UGameViewportClient::OnViewportCreated().AddRaw(this, &FImGuiModule::OnViewportCreated);
+#endif
 }
 
 void FImGuiModule::ShutdownModule()
 {
 #if WITH_EDITOR
 	FEditorDelegates::EndPIE.RemoveAll(this);
+#endif
+
+#if WITH_ENGINE
+	UGameViewportClient::OnViewportCreated().RemoveAll(this);
 #endif
 
 	SessionContexts.Reset();
@@ -37,9 +45,9 @@ FImGuiModule& FImGuiModule::Get()
 	return Module;
 }
 
-TSharedPtr<FImGuiContext> FImGuiModule::FindOrCreateSessionContext(const int32 PIEInstance)
+TSharedPtr<FImGuiContext> FImGuiModule::FindOrCreateSessionContext(const int32 PieSessionId)
 {
-	TSharedPtr<FImGuiContext> Context = SessionContexts.FindRef(PIEInstance);
+	TSharedPtr<FImGuiContext> Context = SessionContexts.FindRef(PieSessionId);
 	if (!Context.IsValid())
 	{
 		FString Host;
@@ -51,7 +59,7 @@ TSharedPtr<FImGuiContext> FImGuiModule::FindOrCreateSessionContext(const int32 P
 		if (!bShouldConnect)
 		{
 			// Bind consecutive listen ports for PIE sessions
-			Port += PIEInstance + 1;
+			Port += PieSessionId + 1;
 		}
 
 #if WITH_ENGINE
@@ -81,14 +89,14 @@ TSharedPtr<FImGuiContext> FImGuiModule::FindOrCreateSessionContext(const int32 P
 
 		if (Context.IsValid())
 		{
-			if (bShouldConnect && !Context->Connect(Host, Port) || bShouldListen && !Context->Listen(Port))
+			if ((bShouldConnect && !Context->Connect(Host, Port)) || (bShouldListen && !Context->Listen(Port)))
 			{
 				Context.Reset();
 				Context = nullptr;
 			}
 			else
 			{
-				SessionContexts.Add(PIEInstance, Context);
+				SessionContexts.Add(PieSessionId, Context);
 			}
 		}
 	}
@@ -98,22 +106,66 @@ TSharedPtr<FImGuiContext> FImGuiModule::FindOrCreateSessionContext(const int32 P
 
 void FImGuiModule::OnEndPIE(bool bIsSimulating)
 {
-	SessionContexts.Reset();
+	for (auto ContextIt = SessionContexts.CreateIterator(); ContextIt; ++ContextIt)
+	{
+		if (ContextIt->Key != INDEX_NONE)
+		{
+			ContextIt.RemoveCurrent();
+		}
+	}
+}
+
+void FImGuiModule::OnViewportCreated() const
+{
+#if WITH_ENGINE
+	UGameViewportClient* GameViewport = GEngine->GameViewport;
+	if (!IsValid(GameViewport))
+	{
+		return;
+	}
+
+#if UE_VERSION_OLDER_THAN(5, 5, 0)
+	const int32 PieSessionId = GPlayInEditorID;
+#else
+	const int32 PieSessionId = UE::GetPlayInEditorID();
+#endif
+
+	const TSharedPtr<FImGuiContext> Context = SessionContexts.FindRef(PieSessionId);
+	if (!Context.IsValid())
+	{
+		return;
+	}
+
+	ImGui::FScopedContext ScopedContext(Context);
+
+	FImGuiViewportData* ViewportData = FImGuiViewportData::GetOrCreate(ImGui::GetMainViewport());
+	if (ViewportData && !ViewportData->Overlay.IsValid())
+	{
+		const TSharedRef<SImGuiOverlay> Overlay = SNew(SImGuiOverlay).Context(Context);
+
+		ViewportData->Window = GameViewport->GetWindow();
+		ViewportData->Overlay = Overlay;
+
+		GameViewport->AddViewportWidgetContent(Overlay, TNumericLimits<int32>::Max());
+	}
+#endif
 }
 
 TSharedPtr<FImGuiContext> FImGuiModule::CreateWindowContext(const TSharedRef<SWindow>& Window)
 {
-	const TSharedRef<SImGuiOverlay> Overlay = SNew(SImGuiOverlay);
-	Window->AddOverlaySlot(TNumericLimits<int32>::Max())[Overlay];
+	const TSharedRef<FImGuiContext> Context = FImGuiContext::Create();
 
-	TSharedPtr<FImGuiContext> Context = Overlay->GetContext();
 	ImGui::FScopedContext ScopedContext(Context);
 
 	FImGuiViewportData* ViewportData = FImGuiViewportData::GetOrCreate(ImGui::GetMainViewport());
 	if (ViewportData)
 	{
+		const TSharedRef<SImGuiOverlay> Overlay = SNew(SImGuiOverlay).Context(Context);
+
 		ViewportData->Window = Window;
 		ViewportData->Overlay = Overlay;
+
+		Window->AddOverlaySlot(TNumericLimits<int32>::Max())[Overlay];
 	}
 
 	return Context;
@@ -127,17 +179,19 @@ TSharedPtr<FImGuiContext> FImGuiModule::CreateViewportContext(UGameViewportClien
 		return nullptr;
 	}
 
-	const TSharedRef<SImGuiOverlay> Overlay = SNew(SImGuiOverlay);
-	GameViewport->AddViewportWidgetContent(Overlay, TNumericLimits<int32>::Max());
+	const TSharedRef<FImGuiContext> Context = FImGuiContext::Create();
 
-	TSharedPtr<FImGuiContext> Context = Overlay->GetContext();
 	ImGui::FScopedContext ScopedContext(Context);
 
 	FImGuiViewportData* ViewportData = FImGuiViewportData::GetOrCreate(ImGui::GetMainViewport());
 	if (ViewportData)
 	{
+		const TSharedRef<SImGuiOverlay> Overlay = SNew(SImGuiOverlay).Context(Context);
+
 		ViewportData->Window = GameViewport->GetWindow();
 		ViewportData->Overlay = Overlay;
+
+		GameViewport->AddViewportWidgetContent(Overlay, TNumericLimits<int32>::Max());
 	}
 
 	return Context;
