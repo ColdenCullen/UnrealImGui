@@ -48,8 +48,10 @@ struct SavedImguiContext
 	bool					mDrawMouse									= false;
 	bool					mSavedContext								= false;
 	char					mPadding1[2]								= {};
+#if IMGUI_VERSION_NUM < 18700
 	int						mKeyMap[ImGuiKey_COUNT]						= {};
 	char					mPadding2[8 - (sizeof(mKeyMap) % 8)]		={};	
+#endif
 };
 
 //=============================================================================
