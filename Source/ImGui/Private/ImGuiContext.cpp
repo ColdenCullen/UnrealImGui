@@ -522,22 +522,36 @@ void FImGuiContext::OnDisplayMetricsChanged(const FDisplayMetrics& DisplayMetric
 	ImGuiPlatformIO& PlatformIO = ImGui::GetPlatformIO();
 	PlatformIO.Monitors.resize(0);
 
-	for (const FMonitorInfo& Monitor : DisplayMetrics.MonitorInfo)
+	if (DisplayMetrics.MonitorInfo.IsEmpty())
 	{
 		ImGuiPlatformMonitor ImGuiMonitor;
-		ImGuiMonitor.MainPos = FIntPoint(Monitor.DisplayRect.Left, Monitor.DisplayRect.Top);
-		ImGuiMonitor.MainSize = FIntPoint(Monitor.DisplayRect.Right - Monitor.DisplayRect.Left, Monitor.DisplayRect.Bottom - Monitor.DisplayRect.Top);
-		ImGuiMonitor.WorkPos = FIntPoint(Monitor.WorkArea.Left, Monitor.WorkArea.Top);
-		ImGuiMonitor.WorkSize = FIntPoint(Monitor.WorkArea.Right - Monitor.WorkArea.Left, Monitor.WorkArea.Bottom - Monitor.WorkArea.Top);
-		ImGuiMonitor.DpiScale = Monitor.DPI / 96.0f;
+		ImGuiMonitor.MainPos = FIntPoint(0, 0);
+		ImGuiMonitor.MainSize = FIntPoint(DisplayMetrics.PrimaryDisplayWidth, DisplayMetrics.PrimaryDisplayHeight);
+		ImGuiMonitor.WorkPos = FIntPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
+		ImGuiMonitor.WorkSize = FIntPoint(DisplayMetrics.PrimaryDisplayWorkAreaRect.Right - DisplayMetrics.PrimaryDisplayWorkAreaRect.Left, DisplayMetrics.PrimaryDisplayWorkAreaRect.Bottom - DisplayMetrics.PrimaryDisplayWorkAreaRect.Top);
+		ImGuiMonitor.DpiScale = 1.0f;
 
-		if (Monitor.bIsPrimary)
+		PlatformIO.Monitors.push_front(ImGuiMonitor);
+	}
+	else
+	{
+		for (const FMonitorInfo& Monitor : DisplayMetrics.MonitorInfo)
 		{
-			PlatformIO.Monitors.push_front(ImGuiMonitor);
-		}
-		else
-		{
-			PlatformIO.Monitors.push_back(ImGuiMonitor);
+			ImGuiPlatformMonitor ImGuiMonitor;
+			ImGuiMonitor.MainPos = FIntPoint(Monitor.DisplayRect.Left, Monitor.DisplayRect.Top);
+			ImGuiMonitor.MainSize = FIntPoint(Monitor.DisplayRect.Right - Monitor.DisplayRect.Left, Monitor.DisplayRect.Bottom - Monitor.DisplayRect.Top);
+			ImGuiMonitor.WorkPos = FIntPoint(Monitor.WorkArea.Left, Monitor.WorkArea.Top);
+			ImGuiMonitor.WorkSize = FIntPoint(Monitor.WorkArea.Right - Monitor.WorkArea.Left, Monitor.WorkArea.Bottom - Monitor.WorkArea.Top);
+			ImGuiMonitor.DpiScale = Monitor.DPI / 96.0f;
+
+			if (Monitor.bIsPrimary)
+			{
+				PlatformIO.Monitors.push_front(ImGuiMonitor);
+			}
+			else
+			{
+				PlatformIO.Monitors.push_back(ImGuiMonitor);
+			}
 		}
 	}
 }
